@@ -54,13 +54,13 @@ for t in range(1, T):
     # Evento de inundación (entre t=35 y t=40)
     is_flood = 35 <= t < 35 + event_duration
     
-    # Sin intervención
+    # Caso base sin intervención
     degradation_baseline[t] = degradation_baseline[t-1] + deg_rate
     om_baseline[t] = max(om_baseline[t-1] - 0.1, 0)
     moisture_baseline[t] = max(moisture_baseline[t-1] - 0.2, 0)
     prod_baseline[t] = max(prod_baseline[t-1] - 0.5, 0)
     
-    # Con huertos regenerativos
+    # Caso base con huertos regenerativos
     degradation_regen[t] = max(degradation_regen[t-1] + deg_rate - regen_reduction, 0)
     om_regen[t] = om_regen[t-1] + om_gain_rate
     moisture_regen[t] = moisture_regen[t-1] + moisture_gain_rate
@@ -76,9 +76,9 @@ for t in range(1, T):
         
         # Con huertos durante sequía
         degradation_drought_regen[t] = max(degradation_drought_regen[t-1] + deg_rate * (1 + drought_severity/2) - regen_reduction, 0)
-        om_drought_regen[t] = max(om_drought_regen[t-1] - 0.1, 0)  # Menor pérdida de materia orgánica
-        moisture_drought_regen[t] = max(moisture_drought_regen[t-1] - 2.0, 0)  # Menor pérdida de humedad
-        prod_drought_regen[t] = max(prod_drought_regen[t-1] - 0.8, 0)  # Menor pérdida de productividad
+        om_drought_regen[t] = max(om_drought_regen[t-1] - 0.1, 0)
+        moisture_drought_regen[t] = max(moisture_drought_regen[t-1] - 2.0, 0)
+        prod_drought_regen[t] = max(prod_drought_regen[t-1] - 0.8, 0)
     else:
         degradation_drought[t] = degradation_drought[t-1] + deg_rate
         om_drought[t] = max(om_drought[t-1] - 0.1, 0)
@@ -100,9 +100,9 @@ for t in range(1, T):
         
         # Con huertos durante inundación
         degradation_flood_regen[t] = max(degradation_flood_regen[t-1] + deg_rate * (1 + flood_severity/2) - regen_reduction, 0)
-        om_flood_regen[t] = max(om_flood_regen[t-1] - 0.2, 0)  # Menor pérdida de materia orgánica
-        moisture_flood_regen[t] = min(moisture_flood_regen[t-1] + 5.0, 100)  # Menor exceso de humedad
-        prod_flood_regen[t] = max(prod_flood_regen[t-1] - 1.5, 0)  # Menor pérdida de productividad
+        om_flood_regen[t] = max(om_flood_regen[t-1] - 0.2, 0)
+        moisture_flood_regen[t] = min(moisture_flood_regen[t-1] + 5.0, 100)
+        prod_flood_regen[t] = max(prod_flood_regen[t-1] - 1.5, 0)
     else:
         degradation_flood[t] = degradation_flood[t-1] + deg_rate
         om_flood[t] = max(om_flood[t-1] - 0.1, 0)
@@ -117,31 +117,34 @@ for t in range(1, T):
 # Gráficas
 metrics = [
     ("Nivel de degradación", 
-     [degradation_drought, degradation_drought_regen, degradation_flood, degradation_flood_regen],
-     ["Sequía sin huertos", "Sequía con huertos", "Inundación sin huertos", "Inundación con huertos"],
+     [degradation_baseline, degradation_regen, degradation_drought, degradation_drought_regen, degradation_flood, degradation_flood_regen],
+     ["Caso base sin huertos", "Caso base con huertos", "Sequía sin huertos", "Sequía con huertos", "Inundación sin huertos", "Inundación con huertos"],
      "Unidad"),
     ("Materia orgánica (%)", 
-     [om_drought, om_drought_regen, om_flood, om_flood_regen],
-     ["Sequía sin huertos", "Sequía con huertos", "Inundación sin huertos", "Inundación con huertos"],
+     [om_baseline, om_regen, om_drought, om_drought_regen, om_flood, om_flood_regen],
+     ["Caso base sin huertos", "Caso base con huertos", "Sequía sin huertos", "Sequía con huertos", "Inundación sin huertos", "Inundación con huertos"],
      "%"),
     ("Humedad retenida (%)", 
-     [moisture_drought, moisture_drought_regen, moisture_flood, moisture_flood_regen],
-     ["Sequía sin huertos", "Sequía con huertos", "Inundación sin huertos", "Inundación con huertos"],
+     [moisture_baseline, moisture_regen, moisture_drought, moisture_drought_regen, moisture_flood, moisture_flood_regen],
+     ["Caso base sin huertos", "Caso base con huertos", "Sequía sin huertos", "Sequía con huertos", "Inundación sin huertos", "Inundación con huertos"],
      "%"),
     ("Productividad del suelo (índice)", 
-     [prod_drought, prod_drought_regen, prod_flood, prod_flood_regen],
-     ["Sequía sin huertos", "Sequía con huertos", "Inundación sin huertos", "Inundación con huertos"],
+     [prod_baseline, prod_regen, prod_drought, prod_drought_regen, prod_flood, prod_flood_regen],
+     ["Caso base sin huertos", "Caso base con huertos", "Sequía sin huertos", "Sequía con huertos", "Inundación sin huertos", "Inundación con huertos"],
      "Unidad")
 ]
 
+# Configuración de colores para mejor visualización
+colors = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728', '#9467bd', '#8c564b']
+
 for title, data_series, labels, ylabel in metrics:
-    plt.figure(figsize=(12, 6))
-    for data, label in zip(data_series, labels):
-        plt.plot(time, data, label=label)
+    plt.figure(figsize=(15, 8))
+    for data, label, color in zip(data_series, labels, colors):
+        plt.plot(time, data, label=label, color=color)
     plt.title(title)
     plt.xlabel("Tiempo (unidades)")
     plt.ylabel(ylabel)
-    plt.legend()
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.grid(True)
     
     # Marcar períodos de eventos extremos
