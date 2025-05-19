@@ -12,18 +12,40 @@ om_gain_rate = 0.5        # ganancia de materia orgánica con huertos
 moisture_gain_rate = 0.4  # ganancia de humedad con huertos
 prod_gain_rate = 0.3      # ganancia de productividad con huertos
 
+# Parámetros de eventos extremos
+drought_severity = 0.8    # severidad de la sequía (0-1)
+flood_severity = 0.7      # severidad de la inundación (0-1)
+event_duration = 5        # duración del evento en unidades de tiempo
+
 # Estado inicial (0 = buen suelo, 100 = suelo destruido)
 degradation_baseline = np.zeros(T)
 degradation_regen = np.zeros(T)
+degradation_drought = np.zeros(T)
+degradation_flood = np.zeros(T)
+
 om_baseline = np.full(T, 5.0)    # % de materia orgánica inicial
 om_regen = np.full(T, 5.0)
+om_drought = np.full(T, 5.0)
+om_flood = np.full(T, 5.0)
+
 moisture_baseline = np.full(T, 20.0)  # % de humedad inicial
 moisture_regen = np.full(T, 20.0)
+moisture_drought = np.full(T, 20.0)
+moisture_flood = np.full(T, 20.0)
+
 prod_baseline = np.full(T, 50.0)      # productividad inicial (índice)
 prod_regen = np.full(T, 50.0)
+prod_drought = np.full(T, 50.0)
+prod_flood = np.full(T, 50.0)
 
 # Simulación
 for t in range(1, T):
+    # Evento de sequía (entre t=20 y t=25)
+    is_drought = 20 <= t < 20 + event_duration
+    
+    # Evento de inundación (entre t=35 y t=40)
+    is_flood = 35 <= t < 35 + event_duration
+    
     # Sin intervención
     degradation_baseline[t] = degradation_baseline[t-1] + deg_rate
     om_baseline[t] = max(om_baseline[t-1] - 0.1, 0)
@@ -35,22 +57,59 @@ for t in range(1, T):
     om_regen[t] = om_regen[t-1] + om_gain_rate
     moisture_regen[t] = moisture_regen[t-1] + moisture_gain_rate
     prod_regen[t] = prod_regen[t-1] + prod_gain_rate
+    
+    # Simulación de sequía
+    if is_drought:
+        degradation_drought[t] = degradation_drought[t-1] + deg_rate * (1 + drought_severity)
+        om_drought[t] = max(om_drought[t-1] - 0.3, 0)  # Mayor pérdida de materia orgánica
+        moisture_drought[t] = max(moisture_drought[t-1] - 5.0, 0)  # Pérdida severa de humedad
+        prod_drought[t] = max(prod_drought[t-1] - 2.0, 0)  # Mayor pérdida de productividad
+    else:
+        degradation_drought[t] = degradation_drought[t-1] + deg_rate
+        om_drought[t] = max(om_drought[t-1] - 0.1, 0)
+        moisture_drought[t] = max(moisture_drought[t-1] - 0.2, 0)
+        prod_drought[t] = max(prod_drought[t-1] - 0.5, 0)
+    
+    # Simulación de inundación
+    if is_flood:
+        degradation_flood[t] = degradation_flood[t-1] + deg_rate * (1 + flood_severity)
+        om_flood[t] = max(om_flood[t-1] - 0.4, 0)  # Pérdida de materia orgánica por erosión
+        moisture_flood[t] = min(moisture_flood[t-1] + 10.0, 100)  # Exceso de humedad
+        prod_flood[t] = max(prod_flood[t-1] - 3.0, 0)  # Pérdida severa de productividad
+    else:
+        degradation_flood[t] = degradation_flood[t-1] + deg_rate
+        om_flood[t] = max(om_flood[t-1] - 0.1, 0)
+        moisture_flood[t] = max(moisture_flood[t-1] - 0.2, 0)
+        prod_flood[t] = max(prod_flood[t-1] - 0.5, 0)
 
 # Gráficas
 metrics = [
-    ("Nivel de degradación", degradation_baseline, degradation_regen, "Unidad"),
-    ("Materia orgánica (%)", om_baseline, om_regen, "%"),
-    ("Humedad retenida (%)", moisture_baseline, moisture_regen, "%"),
-    ("Productividad del suelo (índice)", prod_baseline, prod_regen, "Unidad")
+    ("Nivel de degradación", 
+     [degradation_baseline, degradation_regen, degradation_drought, degradation_flood],
+     ["Sin intervención", "Con huertos regenerativos", "Sequía", "Inundación"],
+     "Unidad"),
+    ("Materia orgánica (%)", 
+     [om_baseline, om_regen, om_drought, om_flood],
+     ["Sin intervención", "Con huertos regenerativos", "Sequía", "Inundación"],
+     "%"),
+    ("Humedad retenida (%)", 
+     [moisture_baseline, moisture_regen, moisture_drought, moisture_flood],
+     ["Sin intervención", "Con huertos regenerativos", "Sequía", "Inundación"],
+     "%"),
+    ("Productividad del suelo (índice)", 
+     [prod_baseline, prod_regen, prod_drought, prod_flood],
+     ["Sin intervención", "Con huertos regenerativos", "Sequía", "Inundación"],
+     "Unidad")
 ]
 
-for title, base, regen, ylabel in metrics:
-    plt.figure()
-    plt.plot(time, base, label="Sin intervención")
-    plt.plot(time, regen, label="Con huertos regenerativos")
+for title, data_series, labels, ylabel in metrics:
+    plt.figure(figsize=(10, 6))
+    for data, label in zip(data_series, labels):
+        plt.plot(time, data, label=label)
     plt.title(title)
     plt.xlabel("Tiempo (unidades)")
     plt.ylabel(ylabel)
     plt.legend()
+    plt.grid(True)
     plt.tight_layout()
     plt.show()
