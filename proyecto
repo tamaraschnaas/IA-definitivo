@@ -114,6 +114,29 @@ for t in range(1, T):
         moisture_flood_regen[t] = moisture_flood_regen[t-1] + moisture_gain_rate
         prod_flood_regen[t] = prod_flood_regen[t-1] + prod_gain_rate
 
+# Diagnóstico de valores
+def print_diagnostic(t, scenario_name, degradation, om, moisture, prod):
+    print(f"\nDiagnóstico para {scenario_name} en tiempo {t}:")
+    print(f"Degradación: {degradation[t]:.2f}")
+    print(f"Materia orgánica: {om[t]:.2f}%")
+    print(f"Humedad: {moisture[t]:.2f}%")
+    print(f"Productividad: {prod[t]:.2f}")
+
+# Imprimir diagnóstico en momentos clave
+key_times = [0, 19, 25, 34, 40, 49]  # Inicio, antes de sequía, después de sequía, antes de inundación, después de inundación, final
+
+for t in key_times:
+    print("\n" + "="*50)
+    print(f"DIAGNÓSTICO EN TIEMPO {t}")
+    print("="*50)
+    
+    print_diagnostic(t, "Caso base sin huertos", degradation_baseline, om_baseline, moisture_baseline, prod_baseline)
+    print_diagnostic(t, "Caso base con huertos", degradation_regen, om_regen, moisture_regen, prod_regen)
+    print_diagnostic(t, "Sequía sin huertos", degradation_drought, om_drought, moisture_drought, prod_drought)
+    print_diagnostic(t, "Sequía con huertos", degradation_drought_regen, om_drought_regen, moisture_drought_regen, prod_drought_regen)
+    print_diagnostic(t, "Inundación sin huertos", degradation_flood, om_flood, moisture_flood, prod_flood)
+    print_diagnostic(t, "Inundación con huertos", degradation_flood_regen, om_flood_regen, moisture_flood_regen, prod_flood_regen)
+
 # Gráficas
 metrics = [
     ("Nivel de degradación", 
@@ -153,3 +176,106 @@ for title, data_series, labels, ylabel in metrics:
     
     plt.tight_layout()
     plt.show()
+
+# Función para simular un escenario con parámetros dados
+def simulate_scenario(params, T=50):
+    deg_rate, regen_reduction, om_gain_rate, moisture_gain_rate, prod_gain_rate = params
+    
+    # Inicialización
+    degradation = np.zeros(T)
+    om = np.full(T, 5.0)
+    moisture = np.full(T, 20.0)
+    prod = np.full(T, 50.0)
+    
+    # Simulación
+    for t in range(1, T):
+        degradation[t] = max(degradation[t-1] + deg_rate - regen_reduction, 0)
+        om[t] = max(om[t-1] - 0.1 + om_gain_rate, 0)
+        moisture[t] = max(moisture[t-1] - 0.2 + moisture_gain_rate, 0)
+        prod[t] = max(prod[t-1] - 0.5 + prod_gain_rate, 0)
+    
+    return degradation, om, moisture, prod
+
+# Búsqueda de parámetros óptimos usando grid search
+def find_optimal_parameters():
+    # Rangos de parámetros a probar
+    deg_rates = np.linspace(0.1, 3.0, 10)
+    regen_reductions = np.linspace(0.1, 5.0, 10)
+    om_gains = np.linspace(0.1, 2.0, 10)
+    moisture_gains = np.linspace(0.1, 2.0, 10)
+    prod_gains = np.linspace(0.1, 2.0, 10)
+    
+    best_prod = -np.inf
+    best_params = None
+    
+    # Probar combinaciones de parámetros
+    for deg in deg_rates:
+        for reg in regen_reductions:
+            for om in om_gains:
+                for moist in moisture_gains:
+                    for prod in prod_gains:
+                        params = [deg, reg, om, moist, prod]
+                        _, _, _, prod_vals = simulate_scenario(params)
+                        final_prod = prod_vals[-1]
+                        
+                        if final_prod > best_prod:
+                            best_prod = final_prod
+                            best_params = params
+    
+    return best_params, best_prod
+
+# Encontrar parámetros óptimos
+print("\nBuscando parámetros óptimos...")
+best_params, best_prod = find_optimal_parameters()
+
+# Imprimir resultados
+print("\nResultados de Optimización:")
+print("="*50)
+print(f"Parámetros óptimos encontrados:")
+print(f"Tasa de degradación: {best_params[0]:.3f}")
+print(f"Reducción por huertos: {best_params[1]:.3f}")
+print(f"Ganancia de materia orgánica: {best_params[2]:.3f}")
+print(f"Ganancia de humedad: {best_params[3]:.3f}")
+print(f"Ganancia de productividad: {best_params[4]:.3f}")
+print(f"\nProductividad final alcanzada: {best_prod:.2f}")
+
+# Simular con parámetros óptimos
+degradation_opt, om_opt, moisture_opt, prod_opt = simulate_scenario(best_params)
+
+# Gráfica comparativa de productividad
+plt.figure(figsize=(12, 6))
+plt.plot(time, prod_baseline, label='Sin intervención', color='red')
+plt.plot(time, prod_regen, label='Con huertos (parámetros actuales)', color='blue')
+plt.plot(time, prod_opt, label='Con huertos (parámetros óptimos)', color='green', linestyle='--')
+plt.title('Comparación de Productividad')
+plt.xlabel('Tiempo (unidades)')
+plt.ylabel('Productividad (índice)')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Análisis de sensibilidad
+print("\nAnálisis de Sensibilidad:")
+print("="*50)
+print("Efecto de cambios en cada parámetro sobre la productividad final:")
+
+# Variación de ±20% en cada parámetro
+variation = 0.2
+param_names = ['Tasa de degradación', 'Reducción por huertos', 
+               'Ganancia de materia orgánica', 'Ganancia de humedad', 
+               'Ganancia de productividad']
+
+for i, param_name in enumerate(param_names):
+    params_plus = best_params.copy()
+    params_minus = best_params.copy()
+    
+    params_plus[i] *= (1 + variation)
+    params_minus[i] *= (1 - variation)
+    
+    _, _, _, prod_plus = simulate_scenario(params_plus)
+    _, _, _, prod_minus = simulate_scenario(params_minus)
+    
+    print(f"\n{param_name}:")
+    print(f"  +20%: {prod_plus[-1]:.2f}")
+    print(f"  -20%: {prod_minus[-1]:.2f}")
+    print(f"  Sensibilidad: {abs(prod_plus[-1] - prod_minus[-1]):.2f}")
