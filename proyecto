@@ -298,10 +298,61 @@ class SoilEnvironment:
         # Combinar todos los estados en una matriz
         return np.stack([self.soil_health, self.moisture, self.organic_matter, self.gardens])
     
+    def calculate_utility(self):
+        """
+        Función de utilidad que combina múltiples factores:
+        1. Salud del suelo
+        2. Eficiencia de los huertos
+        3. Diversidad de la configuración
+        4. Resiliencia a eventos extremos
+        """
+        # Utilidad base por salud del suelo
+        health_utility = np.mean(self.soil_health) / 100.0
+        
+        # Utilidad por eficiencia de los huertos
+        garden_efficiency = np.sum(self.gardens) / (self.size * self.size)
+        garden_utility = 1.0 - abs(garden_efficiency - 0.3)  # Penaliza si hay demasiados o muy pocos huertos
+        
+        # Utilidad por diversidad (patrones de huertos)
+        garden_pattern = np.roll(self.gardens, 1, axis=0) + np.roll(self.gardens, -1, axis=0) + \
+                        np.roll(self.gardens, 1, axis=1) + np.roll(self.gardens, -1, axis=1)
+        diversity_utility = 1.0 - np.mean(np.abs(garden_pattern - 2)) / 4.0  # Idealmente 2 huertos adyacentes
+        
+        # Utilidad por balance de humedad
+        moisture_balance = 1.0 - np.std(self.moisture) / 100.0
+        
+        # Utilidad por materia orgánica
+        organic_utility = np.mean(self.organic_matter) / 100.0
+        
+        # Pesos para cada componente de la utilidad
+        weights = {
+            'health': 0.3,
+            'garden': 0.2,
+            'diversity': 0.2,
+            'moisture': 0.15,
+            'organic': 0.15
+        }
+        
+        # Calcular utilidad total
+        total_utility = (
+            weights['health'] * health_utility +
+            weights['garden'] * garden_utility +
+            weights['diversity'] * diversity_utility +
+            weights['moisture'] * moisture_balance +
+            weights['organic'] * organic_utility
+        )
+        
+        return total_utility, {
+            'health_utility': health_utility,
+            'garden_utility': garden_utility,
+            'diversity_utility': diversity_utility,
+            'moisture_balance': moisture_balance,
+            'organic_utility': organic_utility
+        }
+    
     def step(self, action):
         # action es una tupla (x, y) indicando dónde colocar/quitar un huerto
         x, y = action
-        reward = 0
         done = False
         
         # Aplicar la acción (toggle garden)
@@ -321,22 +372,21 @@ class SoilEnvironment:
                     self.moisture[i, j] = min(self.moisture[i, j] + 0.4, 100)
                     self.organic_matter[i, j] = min(self.organic_matter[i, j] + 0.5, 100)
         
-        # Calcular recompensa
-        reward = np.mean(self.soil_health) - 50  # Recompensa basada en la salud promedio
-        
         # Eventos aleatorios
         if np.random.random() < 0.1:  # 10% de probabilidad de sequía
             self.moisture = np.maximum(self.moisture - 5, 0)
-            reward -= 10
         elif np.random.random() < 0.1:  # 10% de probabilidad de inundación
             self.moisture = np.minimum(self.moisture + 10, 100)
-            reward -= 5
+        
+        # Calcular utilidad
+        utility, utility_components = self.calculate_utility()
+        reward = utility * 100  # Escalar la utilidad para que sea comparable con el sistema anterior
         
         self.time += 1
         if self.time >= 50:  # Episodio termina después de 50 pasos
             done = True
         
-        return self.get_state(), reward, done
+        return self.get_state(), reward, done, utility_components
 
 class QLearningAgent:
     def __init__(self, state_size, action_size, learning_rate=0.1, discount_factor=0.95, exploration_rate=1.0):
@@ -381,53 +431,82 @@ class QLearningAgent:
 
 # Entrenamiento
 env = SoilEnvironment()
-agent = QLearningAgent(state_size=4, action_size=100)  # 4 estados, 100 acciones posibles (10x10)
+agent = QLearningAgent(state_size=4, action_size=100)
 
 episodes = 1000
 rewards_history = []
+utilities_history = []
 best_reward = -np.inf
 best_garden_config = None
+best_utility = -np.inf
 
 for episode in range(episodes):
     state = env.reset()
     total_reward = 0
+    episode_utilities = []
     done = False
     
     while not done:
         action = agent.get_action(state)
-        next_state, reward, done = env.step(action)
+        next_state, reward, done, utility_components = env.step(action)
         agent.update(state, action, reward, next_state)
         state = next_state
         total_reward += reward
+        episode_utilities.append(utility_components)
     
-    # Guardar la mejor configuración
-    if total_reward > best_reward:
-        best_reward = total_reward
+    # Guardar la mejor configuración basada en utilidad
+    final_utility = episode_utilities[-1]
+    if final_utility['health_utility'] > best_utility:
+        best_utility = final_utility['health_utility']
         best_garden_config = env.gardens.copy()
     
     rewards_history.append(total_reward)
+    utilities_history.append(final_utility)
     
     # Reducir la tasa de exploración
     agent.exploration_rate = max(0.01, agent.exploration_rate * 0.995)
     
     if episode % 100 == 0:
-        print(f"Episodio {episode}, Recompensa: {total_reward:.2f}, Tasa de exploración: {agent.exploration_rate:.2f}")
+        print(f"\nEpisodio {episode}")
+        print(f"Recompensa total: {total_reward:.2f}")
+        print(f"Utilidad final: {final_utility}")
+        print(f"Tasa de exploración: {agent.exploration_rate:.2f}")
 
 # Visualización de resultados
-plt.figure(figsize=(15, 5))
+plt.figure(figsize=(15, 10))
 
 # Gráfica de recompensas
-plt.subplot(1, 2, 1)
+plt.subplot(2, 2, 1)
 plt.plot(rewards_history)
 plt.title('Historial de Recompensas')
 plt.xlabel('Episodio')
 plt.ylabel('Recompensa Total')
 
+# Gráfica de componentes de utilidad
+plt.subplot(2, 2, 2)
+utilities_array = np.array([[u[k] for k in ['health_utility', 'garden_utility', 'diversity_utility', 
+                                          'moisture_balance', 'organic_utility']] 
+                           for u in utilities_history])
+plt.plot(utilities_array)
+plt.title('Componentes de Utilidad')
+plt.xlabel('Episodio')
+plt.ylabel('Utilidad')
+plt.legend(['Salud', 'Huertos', 'Diversidad', 'Humedad', 'Materia Orgánica'])
+
 # Visualización de la mejor configuración de huertos
-plt.subplot(1, 2, 2)
+plt.subplot(2, 2, 3)
 plt.imshow(best_garden_config, cmap='Greens')
 plt.title('Mejor Configuración de Huertos')
 plt.colorbar(label='Presencia de Huerto')
+
+# Gráfica de evolución de utilidad
+plt.subplot(2, 2, 4)
+plt.plot([u['health_utility'] for u in utilities_history], label='Salud')
+plt.plot([u['garden_utility'] for u in utilities_history], label='Huertos')
+plt.title('Evolución de Utilidad')
+plt.xlabel('Episodio')
+plt.ylabel('Utilidad')
+plt.legend()
 
 plt.tight_layout()
 plt.show()
@@ -435,7 +514,7 @@ plt.show()
 # Análisis de la mejor configuración
 print("\nAnálisis de la Mejor Configuración:")
 print("="*50)
-print(f"Recompensa total: {best_reward:.2f}")
+print(f"Utilidad total: {best_utility:.2f}")
 print(f"Número de huertos: {np.sum(best_garden_config)}")
 print(f"Porcentaje de área con huertos: {(np.sum(best_garden_config) / 100) * 100:.1f}%")
 
@@ -443,18 +522,21 @@ print(f"Porcentaje de área con huertos: {(np.sum(best_garden_config) / 100) * 1
 env.reset()
 env.gardens = best_garden_config
 state = env.get_state()
-total_reward = 0
-rewards_over_time = []
+utilities_over_time = []
 
-for _ in range(50):  # Simular 50 pasos de tiempo
-    _, reward, _ = env.step((0, 0))  # La acción no importa porque ya tenemos la configuración óptima
-    total_reward += reward
-    rewards_over_time.append(reward)
+for _ in range(50):
+    _, _, _, utility_components = env.step((0, 0))
+    utilities_over_time.append(utility_components)
 
-plt.figure(figsize=(10, 5))
-plt.plot(rewards_over_time)
-plt.title('Evolución de la Recompensa con la Mejor Configuración')
+# Visualizar evolución de utilidad en el tiempo
+plt.figure(figsize=(12, 6))
+utilities_array = np.array([[u[k] for k in ['health_utility', 'garden_utility', 'diversity_utility', 
+                                          'moisture_balance', 'organic_utility']] 
+                           for u in utilities_over_time])
+plt.plot(utilities_array)
+plt.title('Evolución de Utilidad en el Tiempo')
 plt.xlabel('Tiempo')
-plt.ylabel('Recompensa')
+plt.ylabel('Utilidad')
+plt.legend(['Salud', 'Huertos', 'Diversidad', 'Humedad', 'Materia Orgánica'])
 plt.grid(True)
 plt.show()
